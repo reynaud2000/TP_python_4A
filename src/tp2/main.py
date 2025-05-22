@@ -20,3 +20,5 @@ def main():
     analysis_result = AnalyzeShellcode(shellcode)
     print(analysis_result)
 
+if __name__ == "__main__":
+    main()

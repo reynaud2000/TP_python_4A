@@ -1,5 +1,4 @@
 from ollama import Client
-import os
 
 def AnalyzeShellcode(shellcode):
     """
