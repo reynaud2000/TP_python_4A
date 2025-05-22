@@ -1,4 +1,4 @@
-from src.tp2.utils.Analyze import disassemble, AnalyzeShellcode
+from src.tp2.utils.analyze import analyzeShellcode
 from src.tp2.utils.llm import response_Analyze_shellcode
 import os
 
@@ -14,7 +14,7 @@ def main():
         shellcode = f.read()
     
     # Analyze the shellcode using Capstone and pylibemu
-    result = AnalyzeShellcode(shellcode)
+    result = analyzeShellcode(shellcode)
     print(f"Execution result: {result}")
 
     # Analyze the shellcode using the LLM
