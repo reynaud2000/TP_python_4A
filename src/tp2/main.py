@@ -4,7 +4,7 @@ import os
 
 def main():
     # Check if the shellcode file exists
-    shellcode_file = "shellcode.bin"
+    shellcode_file = os.path.join(os.path.dirname(__file__), "utils", "shellcode.bin")
     if not os.path.exists(shellcode_file):
         print(f"Shellcode file '{shellcode_file}' not found.")
         return
