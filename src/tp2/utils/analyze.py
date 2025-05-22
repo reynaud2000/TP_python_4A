@@ -16,7 +16,7 @@ def disassemble(shellcode, address=0):
 
 def analyzeShellcode(shellcode):
     emu = Emulator()
-    emu.prepare(shellcode)
+    emu.prepare(shellcode, len(shellcode))
     
     found, info = emu.run()
     print(f"Shellcode found: {found}")
