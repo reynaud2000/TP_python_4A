@@ -1,5 +1,6 @@
 from capstone import *
 from pylibemu import *
+import textwrap
 
 def disassemble(shellcode, address=0):
     try:
@@ -13,15 +14,30 @@ def disassemble(shellcode, address=0):
         print("ERROR: %s" % e)
     
 
+def print_hex(data):
+    """
+    Print the hex representation of the data.
+    """
+    hex_data = " ".join(f"{byte:02x}" for byte in data)
+    print(textwrap.fill(hex_data, width=80))
+
 
 def analyzeShellcode(shellcode):
-    emu = Emulator()
-    emu.prepare(shellcode, len(shellcode))
-    found, info = emu.run(shellcode)  # <--- Passes le buffer, pas une adresse d'int
-
-    print(f"Shellcode found: {found}")
-    print(f"Info: {info}")
-    disassemble(shellcode)
-    return info
+    print(print_hex(shellcode))
+    try:
+        from pylibemu import Emulator
+        emu = Emulator()
+        emu.prepare(shellcode, len(shellcode))
+        emu_result = emu.run(shellcode)
+        print("------ Emu résultat -------")
+        print(f"Résultat de l'émulateur : {emu_result}")
+    except ImportError:
+        print("pylibemu non installé, aucune émulation faîte.")
+    info_all = (
+        "Hexdump:\n" + hexdump(shellcode) + "\n\n"
+        "Désassemblage:\n" + "\n".join(instructions) + "\n\n"
+        "Résultat émulateur:\n" + str(emu_result)
+    )
+    return info_all
 
     
