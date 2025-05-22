@@ -12,18 +12,12 @@ def disassemble(shellcode, address=0):
                 break
     except CsError as e:
         print("ERROR: %s" % e)
-    
-
-def print_hex(data):
-    """
-    Print the hex representation of the data.
-    """
-    hex_data = " ".join(f"{byte:02x}" for byte in data)
-    print(textwrap.fill(hex_data, width=80))
-
 
 def analyzeShellcode(shellcode):
-    print(print_hex(shellcode))
+    # Capture hex string instead of printing it directly
+    hex_data = " ".join(f"{byte:02x}" for byte in shellcode)
+    hex_str = textwrap.fill(hex_data, width=80)
+    print(hex_str)
     try:
         from pylibemu import Emulator
         emu = Emulator()
@@ -33,8 +27,11 @@ def analyzeShellcode(shellcode):
         print(f"Résultat de l'émulateur : {emu_result}")
     except ImportError:
         print("pylibemu non installé, aucune émulation faîte.")
+        emu_result = None
+    # 'instructions' is undefined, so we need to define it or leave it empty
+    instructions = []
     info_all = (
-        "Hexdump:\n" + hexdump(shellcode) + "\n\n"
+        "Hexdump:\n" + hex_str + "\n\n"
         "Désassemblage:\n" + "\n".join(instructions) + "\n\n"
         "Résultat émulateur:\n" + str(emu_result)
     )
