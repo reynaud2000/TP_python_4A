@@ -1,5 +1,5 @@
-from src.tp2.utils.lib import disassemble
-from src.tp2.utils.llm import AnalyzeShellcode
+from src.tp2.utils.Analyze import disassemble, AnalyzeShellcode
+from src.tp2.utils.llm import response_Analyze_shellcode
 import os
 
 def main():
@@ -12,12 +12,13 @@ def main():
     # Read the shellcode from the file
     with open(shellcode_file, "rb") as f:
         shellcode = f.read()
-
-    # Disassemble the shellcode
-    disassemble(shellcode)
+    
+    # Analyze the shellcode using Capstone and pylibemu
+    result = AnalyzeShellcode(shellcode)
+    print(f"Execution result: {result}")
 
     # Analyze the shellcode using the LLM
-    analysis_result = AnalyzeShellcode(shellcode)
+    analysis_result = response_Analyze_shellcode(result)
     print(analysis_result)
 
 if __name__ == "__main__":

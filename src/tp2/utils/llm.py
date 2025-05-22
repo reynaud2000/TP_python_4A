@@ -1,6 +1,6 @@
 from ollama import Client
 
-def AnalyzeShellcode(shellcode):
+def response_Analyze_shellcode(result):
     """
     This function takes a shellcode as input and uses the Ollama API to analyze it.
     It returns the analysis result.
@@ -13,7 +13,7 @@ def AnalyzeShellcode(shellcode):
         {
             'role': 'user',
             'content': f'Clearly explain what this shellcode does. What is the danger for the user and the recommendations.\
-            What to do if the user has launched the shellcode. Answers in English and French.\n\nShellcode:\n{shellcode}',
+            What to do if the user has launched the shellcode. Answers in English and French.\n\nShellcode:\n{result}',
         },
     ])
     return response['message']['content']
