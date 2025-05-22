@@ -15,25 +15,14 @@ def disassemble(shellcode, address=0):
 
 
 def analyzeShellcode(shellcode):
-    """
-    This function takes a shellcode with pylibemu and disassembles it using Capstone.
-    """
-    # Initialize the emulator
     emu = Emulator()
-    emu.mem_map(0x1000, 0x10000)  # Map memory for the shellcode
+    emu.prepare(shellcode)
+    
+    found, info = emu.run()
+    print(f"Shellcode found: {found}")
+    print(f"Info: {info}")
 
-    # Write the shellcode to memory
-    emu.mem_write(0x1000, shellcode)
-
-    # Disassemble the shellcode
     disassemble(shellcode)
 
-    # Execute the shellcode
-    emu.reg_write(Emulator.REG_EIP, 0x1000)  # Set instruction pointer to the start of the shellcode
-    emu.emu_start(0x1000, 0x1000 + len(shellcode))
-
-
-    # Get the result of the execution
-    result = emu.reg_read(Emulator.REG_EAX)  # Read the EAX register
-    return result
+    return info
     
