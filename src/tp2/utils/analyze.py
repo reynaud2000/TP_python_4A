@@ -17,12 +17,11 @@ def disassemble(shellcode, address=0):
 def analyzeShellcode(shellcode):
     emu = Emulator()
     emu.prepare(shellcode, len(shellcode))
-    
-    found, info = emu.run()
+    found, info = emu.run(shellcode)  # <--- Passes le buffer, pas une adresse d'int
+
     print(f"Shellcode found: {found}")
     print(f"Info: {info}")
-
     disassemble(shellcode)
-
     return info
+
     
