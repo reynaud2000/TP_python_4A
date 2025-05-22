@@ -23,15 +23,14 @@ def main():
     if not os.path.exists(shellcode_file):
         print(f"Shellcode file '{shellcode_file}' not found.")
         return
-e
     with open(shellcode_file, "rb") as f:
         shellcode = f.read()
     
     result = analyzeShellcode(sh)
     print(f"Execution result: {result}")
 
-    analysis_result = response_Analyze_shellcode(result)
-    print(analysis_result)
+    # analysis_result = response_Analyze_shellcode(result)
+    # print(analysis_result)
 
 if __name__ == "__main__":
     main()
