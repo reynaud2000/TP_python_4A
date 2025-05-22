@@ -38,7 +38,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV=/home/morgane/TP_python_4A/venv
+VIRTUAL_ENV=/home/morgane/ESGI/python/TP_python_4A/venv
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"
