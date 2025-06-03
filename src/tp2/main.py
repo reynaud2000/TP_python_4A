@@ -10,7 +10,7 @@ def main():
     with open(shellcode_file, "rb") as f:
         shellcode = f.read()
     
-    result = analyze_shellcode(sh)
+    result = analyze_shellcode(shellcode_file)
     print(f"Execution result: {result}")
 
     # analysis_result = response_Anal
