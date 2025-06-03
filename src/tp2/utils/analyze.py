@@ -13,11 +13,11 @@ def load_shellcode_bin(input_path: Union[str, Path]) -> bytes:
     return path.read_bytes()
 
 def analyze_shellcode(input_bin: Union[str, Path]) -> str:
-    # 1) chargement
+    # 1) chargement du binaire
     try:
         sc_bytes = load_shellcode_bin(input_bin)
     except Exception as e:
-        return f"ERREUR: {e}"
+        return f"ERREUR: {e!s}"
 
     # 2) hexdump
     hexdump = [
@@ -31,20 +31,18 @@ def analyze_shellcode(input_bin: Union[str, Path]) -> str:
     for insn in cs.disasm(sc_bytes, 0x1000):
         disasm.append(f"0x{insn.address:04x}: {insn.mnemonic:8} {insn.op_str}")
 
-    # 4) émulation + hook « à la main » des CALL
+    # 4) émulation pas-à-pas + hook "CALL"
     emu = Emulator()
     BASE = 0x1000
     ret = emu.prepare(sc_bytes, BASE)
     api_calls = []
-    errors = []
+    errors    = []
     MAX_STEPS = 5000
 
     if isinstance(ret, int) and ret != 0:
         errors.append(f"emu.prepare a retourné {ret}")
     else:
-        # 4.a) on injecte une table {adresse: nom_API} que le shellcode va
-        #      appeler (CALL <imm> ou CALL reg). Adresses totalement
-        #      arbitraires, mais en-dehors du buffer 0x1000–0x1000+len().
+        # 4.a) table d'API fictives (adresses hors du shellcode)
         SYM = {
             0x7C810000: "LoadLibraryA",
             0x7C820000: "GetProcAddress",
@@ -52,60 +50,76 @@ def analyze_shellcode(input_bin: Union[str, Path]) -> str:
             0x7C840000: "WinExec",
             0x7C850000: "CreateProcessA",
         }
-        # pour éviter de sauter hors mémoire valide, on peut écrire un
-        # RET (0xC3) sur chaque stub. Ici on ne le fait pas, l'ému
-        # va planter dès qu'il tombera dessus, ce qu'on catchera.
 
-        # 4.b) on boucle en pas-à-pas
-        step = 0
+        # 4.b) boucle pas-à-pas
         cs_run = Cs(CS_ARCH_X86, CS_MODE_32)
-        pc = BASE
+        pc     = BASE
+        step   = 0
+
         try:
             while step < MAX_STEPS:
-                # fetch+disasm
-                buf = emu.memory_read(pc, 16)
-                insns = list(cs_run.disasm(buf, pc, count=1))
+                # fetch+désasm depuis sc_bytes
+                off = pc - BASE
+                if off < 0 or off >= len(sc_bytes):
+                    errors.append(f"EIP hors shellcode: {hex(pc)} – arrêt")
+                    break
+                code = sc_bytes[off : off + 16]
+                insns = list(cs_run.disasm(code, pc, count=1))
                 if not insns:
+                    errors.append(f"Impossible de désassembler à {hex(pc)}")
                     break
                 ins = insns[0]
-                # si c'est un CALL
+
+                # si c'est un CALL, on essaie de résoudre l'opérande
                 if ins.mnemonic == "call":
-                    target = None
                     op = ins.op_str.strip()
-                    # CALL imm
+                    target = None
+                    # call imm
                     if op.startswith("0x"):
-                        target = int(op, 16)
-                    # CALL reg
-                    elif op in ("eax","ebx","ecx","edx","edi","esi","ebp","esp"):
-                        target = emu.get_register(op.upper())
-                    # appelle notre table
-                    if target and target in SYM:
+                        try:
+                            target = int(op, 16)
+                        except ValueError:
+                            pass
+                    # call reg
+                    elif op in ("eax","ebx","ecx","edx","esi","edi","esp","ebp"):
+                        try:
+                            target = emu.get_register(op.upper())
+                        except Exception:
+                            pass
+
+                    # si dans notre table, c'est un API
+                    if target in SYM:
                         api_calls.append(f"{SYM[target]} @{hex(ins.address)}")
 
-                # on avance d'une instruction
+                # on exécute l'instruction suivante
                 r = emu.step()
+                # r != 0 ➔ plantage ou fin
                 if r != 0:
-                    # ex: accès mémoire invalide => on sort
+                    errors.append(f"emu.step() a retourné {r} – arrêt")
                     break
-                pc = emu.get_register("EIP")
+
+                # on récupère le nouveau EIP
+                try:
+                    pc = emu.get_register("EIP")
+                except Exception as e:
+                    errors.append(f"get_register(EIP) a levé {e}")
+                    break
+
                 step += 1
 
         except Exception as e:
-            errors.append(f"Emulation interrompue: {e}")
+            errors.append(f"Emulation interrompue: {e!s}")
 
-    # 5) on construit le rapport
-    report = []
-    report.append(f"=== Analyse de {Path(input_bin).name} ===")
-    report.extend(hexdump)
-    report.append("\n[CAPSTONE] Instructions désassemblées:")
-    report.extend(disasm)
+    # 5) construction du rapport
+    report = [f"=== Analyse de {Path(input_bin).name} ===", *hexdump,
+              "\n[CAPSTONE] Instructions désassemblées:"]
+    report += disasm
     report.append("\n[HOOK-SHELL] API calls détectées (pas-à-pas):")
     if api_calls:
-        for c in api_calls:
-            report.append("• " + c)
+        report += [f"• {c}" for c in api_calls]
     else:
         report.append("Aucune détection")
     for e in errors:
-        report.append("⚠ " + e)
+        report.append(f"⚠ {e}")
 
     return "\n".join(report)
