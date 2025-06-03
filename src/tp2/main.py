@@ -1,4 +1,4 @@
-from src.tp2.utils.analyze import analyzeShellcode
+from src.tp2.utils.analyze import analyze_shellcode
 from src.tp2.utils.llm import response_Analyze_shellcode
 import os
 sh = (
@@ -26,7 +26,7 @@ def main():
     with open(shellcode_file, "rb") as f:
         shellcode = f.read()
     
-    result = analyzeShellcode(sh)
+    result = analyze_shellcode(sh)
     print(f"Execution result: {result}")
 
     # analysis_result = response_Analyze_shellcode(result)
