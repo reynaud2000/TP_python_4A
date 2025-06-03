@@ -1,66 +1,72 @@
 import textwrap
 import sys
-from pylibemu import Emulator # type: ignore
-from capstone import Cs, CS_ARCH_X86, CS_MODE_32 # type: ignore
+from pathlib import Path
+from typing import Union
+from pylibemu import Emulator
+from capstone import Cs, CS_ARCH_X86, CS_MODE_32
 
-def analyze_shellcode(shellcode):
-    # Génération du hexdump
-    hex_data = " ".join(f"{byte:02x}" for byte in shellcode)
-    hex_str = textwrap.fill(hex_data, width=80)
-    hexdump_section = f"Hexdump:\n{hex_str}"
+# =================== CHARGE LES .BIN ===================
+def load_shellcode_bin(input_path: Union[str, Path]) -> bytes:
+    """Lit un fichier .bin et retourne les bytes bruts"""
+    path = Path(input_path)
+    if path.suffix != ".bin":
+        raise ValueError("Seuls les .bin sont acceptés (extension .bin obligatoire)")
+    if not path.exists():
+        raise FileNotFoundError(f"Fichier {path} introuvable")
+    return path.read_bytes()
 
-    # Désassemblage avec Capstone
-    disassembly = []
+# =================== ANALYSE PRINCIPALE ===================
+def analyze_shellcode(input_bin: Union[str, Path]) -> str:
+    # 1) Chargement
     try:
+        sc_bytes = load_shellcode_bin(input_bin)
+    except (ValueError, FileNotFoundError) as e:
+        return f"ERREUR: {e}"
 
-        md = Cs(CS_ARCH_X86, CS_MODE_32)
-        for insn in md.disasm(shellcode, 0x1000):
-            disassembly.append(f"0x{insn.address:08x}: {insn.mnemonic} {insn.op_str}")
-    except ImportError:
-        disassembly = ["Capstone non installé. Veuillez installer pycapstone."]
-    except Exception as e:
-        disassembly = [f"Erreur de désassemblage: {str(e)}"]
-
-    # Émulation avec pylibemu
-    emulation_results = {"warnings": [], "api_calls": []}
-    try:
-        emulator = Emulator()
-        offset = emulator.prepare(shellcode, 0)
-        
-        try:
-            result = emulator.run(0) 
-            emulation_results["emulation_result"] = f"Terminé à l'offset: 0x{result:x}"
-            
-            # Détection d'appels système (exemple basique)
-            if emulator.shellcode:
-                emulation_results["shellcode_detected"] = True
-                sc = emulator.shellcode
-                emulation_results["api_calls"] = [
-                    f"Appel à {call.name} (0x{call.address:x})" 
-                    for call in sc.calls
-                ]
-            else:
-                emulation_results["shellcode_detected"] = False
-                
-        except Exception as e:
-            emulation_results["warnings"].append(f"Émulation échouée: {str(e)}")
-
-    except ImportError:
-        emulation_results["warnings"].append("pylibemu non installé. Installer pylibemu pour l'analyse dynamique.")
-
-    # Construction du rapport
-    report = [
-        "---------------- Analyse de Shellcode ----------------",
-        hexdump_section,
-        "\nDésassemblage:",
-        "\n".join(disassembly) if disassembly else "Aucun résultat",
-        "\nRésultats d'émulation:",
-        f"- Statut: {emulation_results.get('emulation_result', 'Non exécuté')}",
-        f"- Shellcode détecté: {emulation_results.get('shellcode_detected', 'Inconnu')}",
-        "- API/System calls détectés:" if emulation_results["api_calls"] else "Aucun appel détecté",
-        *[f"  • {call}" for call in emulation_results["api_calls"]],
-        *[f"⚠ {warn}" for warn in emulation_results["warnings"]]
+    # 2) Hexdump
+    hexdump = [
+        f"Hexdump ({len(sc_bytes)} octets):",
+        textwrap.fill(" ".join(f"{b:02x}" for b in sc_bytes), width=80)
     ]
 
-    return "\n".join(report)
+    # 3) Désassemblage Capstone
+    disasm = []
+    cs = Cs(CS_ARCH_X86, CS_MODE_32)
+    try:
+        for insn in cs.disasm(sc_bytes, 0x1000):
+            disasm.append(f"0x{insn.address:08x}: {insn.mnemonic:8} {insn.op_str}")
+    except Exception as e:
+        disasm.append(f"Erreur de désassemblage: {e}")
 
+    # 4) Emulation libemu
+    emu_log = {"api_calls": [], "errors": []}
+    try:
+        emu = Emulator()
+        BASE = 0x1000
+        ret = emu.prepare(BASE, sc_bytes)
+        if ret != 0:
+            emu_log["errors"].append(f"emu.prepare a retourné {ret}")
+        else:
+            emu.run()
+            if hasattr(emu, 'shellcode') and emu.shellcode:
+                for call in emu.shellcode.calls:
+                    emu_log["api_calls"].append(f"{call.name} (0x{call.address:x})")
+    except Exception as e:
+        emu_log["errors"].append(str(e))
+
+    # 5) Construction du rapport
+    report = []
+    report.append(f"=== Analyse de {Path(input_bin).name} ===")
+    report.extend(hexdump)
+    report.append("\n[CAPSTONE] Instructions désassemblées:")
+    report.extend(disasm)            # ou disasm[:15] si vous voulez limiter
+    report.append("\n[LIBEMU] Détections dynamiques:")
+    if emu_log["api_calls"]:
+        for c in emu_log["api_calls"]:
+            report.append(f"• {c}")
+    else:
+        report.append("Aucune détection")
+    for err in emu_log["errors"]:
+        report.append(f"⚠ {err}")
+
+    return "\n".join(report)
