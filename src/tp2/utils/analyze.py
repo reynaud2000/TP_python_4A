@@ -5,13 +5,11 @@ from pathlib import Path
 
 from capstone import Cs, CS_ARCH_X86, CS_MODE_32
 
-# pylibemu binding classique
-from pylibemu import Emulator
-from pylibemu.const import EMU_HOOK_CODE, PAGE_EXECUTE_READWRITE
+# import pylibemu CORRECTEMENT : module unique, pas de sous-package const
+from pylibemu import Emulator, EMU_HOOK_CODE, PAGE_EXECUTE_READWRITE
 
 #
-# Table de hash→nom d’API
-# Remplacez par vos propres valeurs extraites du shellcode
+# Table de hash→nom d’API (remplacez par VOS hashes)
 #
 HASH_API = {
     0xec0e4e8e: "LoadLibraryA",
@@ -55,49 +53,42 @@ def analyze_with_pylibemu(binpath: Path) -> str:
 
     emu = Emulator()
 
-    # map shellcode + stub override
+    # map shellcode
     size_map = 0x1000 * ((len(sc) // 0x1000) + 1)
     emu.mem_map(BASE, size_map, PAGE_EXECUTE_READWRITE)
     emu.mem_write(BASE, sc)
 
-    # on remplace le stub de résolution à 0x1002 par un RET (0xC3)
-    # pour ne pas émuler la PEB, etc.
+    # patch stub de résolveur en RET pour éviter les accès PEB non mappés
     emu.mem_write(0x1002, b"\xC3")
 
     # map stack
     emu.mem_map(STACK_BASE, STACK_SIZE, PAGE_EXECUTE_READWRITE)
     emu.reg_write("ESP", STACK_BASE + STACK_SIZE // 2)
 
-    # 4) hook CODE pour capturer chaque CALL
-    def hook_code(emu_obj, address, size, user_data):
-        # lecture de l’instruction en place
-        code = emu_obj.mem_read(address, size)
-        for ins in md.disasm(code, address):
+    # 4) hook CODE : capturer chaque CALL
+    def hook_code(emu_obj, addr, size, user_data):
+        code = emu_obj.mem_read(addr, size)
+        for ins in md.disasm(code, addr):
             if ins.mnemonic == "call":
                 op = ins.op_str.strip()
-                # immediate
                 if op.startswith("0x"):
                     tgt = int(op, 16)
                 else:
-                    # registre (eax, ebx, etc.)
                     tgt = emu_obj.reg_read(op.upper())
-                # si c’est notre stub (0x1002), on lit EDI et on résout
                 if tgt == 0x1002:
                     h = emu_obj.reg_read("EDI")
                     name = HASH_API.get(h, f"unk_{h:08x}")
-                    api_calls.append(f"{name} @{hex(address)}")
+                    api_calls.append(f"{name} @{hex(addr)}")
 
     emu.hook_add(EMU_HOOK_CODE, hook_code)
 
-    # 5) on lance l’émulation
+    # 5) exécution
     try:
-        # méthode run_code ou run selon votre binding
-        # vous pouvez remplacer par emu.run(BASE) ou emu.run_code(BASE)
         emu.run(BASE, count=MAX_STEPS)
     except Exception as e:
         errors.append(f"Émulation interrompue : {e!s}")
 
-    # 6) on construit le rapport
+    # 6) rapport
     rpt = []
     rpt.append(f"=== Analyse de {binpath.name} ===")
     rpt.extend(hexd)
@@ -112,3 +103,4 @@ def analyze_with_pylibemu(binpath: Path) -> str:
         rpt.append("⚠ " + e)
 
     return "\n".join(rpt)
+
