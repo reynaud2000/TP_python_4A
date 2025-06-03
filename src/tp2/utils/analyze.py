@@ -1,5 +1,4 @@
 import textwrap
-import sys
 from pathlib import Path
 from typing import Union
 from pylibemu import Emulator
@@ -42,8 +41,8 @@ def analyze_shellcode(input_bin: Union[str, Path]) -> str:
     emu_log = {"api_calls": [], "errors": []}
     try:
         emu = Emulator()
-        BASE = 0x1000
-        ret = emu.prepare(BASE, sc_bytes)
+        BASE = 0x1000                     # adresse de chargement
+        ret = emu.prepare(BASE, sc_bytes) # <-- on passe d’abord l’int, puis les bytes
         if ret != 0:
             emu_log["errors"].append(f"emu.prepare a retourné {ret}")
         else:
@@ -59,7 +58,7 @@ def analyze_shellcode(input_bin: Union[str, Path]) -> str:
     report.append(f"=== Analyse de {Path(input_bin).name} ===")
     report.extend(hexdump)
     report.append("\n[CAPSTONE] Instructions désassemblées:")
-    report.extend(disasm)            # ou disasm[:15] si vous voulez limiter
+    report.extend(disasm)            # ou disasm[:X] si vous voulez limiter
     report.append("\n[LIBEMU] Détections dynamiques:")
     if emu_log["api_calls"]:
         for c in emu_log["api_calls"]:
