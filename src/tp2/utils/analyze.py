@@ -40,28 +40,31 @@ def analyze_shellcode(input_bin: Union[str, Path]) -> str:
     if isinstance(ret, int) and ret != 0:
         emu_log["errors"].append(f"emu.prepare a retourné {ret}")
     else:
-        # === Ajouts pour simuler les DLL et leurs exports ===
-        K32_BASE   = 0x7C800000  # base arbitraire pour kernel32.dll
-        URLM_BASE  = 0x6F1D0000  # base arbitraire pour urlmon.dll
+        # --- injection manuelle des symboles d'API Windows ---
+        # On choisit des adresses arbitraires dans l'espace simulé
+        K32 = 0x7C800000
+        URLM = 0x6F1D0000
 
-        emu.add_library("kernel32.dll", K32_BASE)
-        emu.add_import("kernel32.dll", "LoadLibraryA",    K32_BASE + 0x0001F000)
-        emu.add_import("kernel32.dll", "GetProcAddress",  K32_BASE + 0x0001E000)
-        emu.add_import("kernel32.dll", "WinExec",         K32_BASE + 0x0005A000)
-        emu.add_import("kernel32.dll", "CreateProcessA",  K32_BASE + 0x0006B000)
+        try:
+            sc_obj = emu.shellcode
+            # table symbol address -> name
+            sc_obj.symbols[K32 + 0x001F000] = "LoadLibraryA"
+            sc_obj.symbols[K32 + 0x001E000] = "GetProcAddress"
+            sc_obj.symbols[K32 + 0x005A000] = "WinExec"
+            sc_obj.symbols[K32 + 0x006B000] = "CreateProcessA"
+            sc_obj.symbols[URLM + 0x003A000] = "URLDownloadToFileA"
+        except Exception as e:
+            emu_log["errors"].append(f"Impossible d'injecter les symboles API: {e}")
 
-        emu.add_library("urlmon.dll", URLM_BASE)
-        emu.add_import("urlmon.dll", "URLDownloadToFileA", URLM_BASE + 0x0003A000)
-        # ======================================================
+        # on exécute
+        emu.run(sc_bytes, max_instr=5000)
 
-        # on exécute l'émulation : buffer + max instructions
-        max_instr = 5000
-        emu.run(sc_bytes, max_instr)
-
-        # on collecte les appels détectés
+        # on récupère les appels loggés
         if getattr(emu, "shellcode", None):
             for call in emu.shellcode.calls:
-                emu_log["api_calls"].append(f"{call.name} @0x{call.address:x}")
+                # call.name est rempli si l'adresse correspond à un symbole
+                name = call.name or f"sub_0x{call.address:x}"
+                emu_log["api_calls"].append(f"{name} @0x{call.address:x}")
 
     # 5) construction du rapport
     report = [f"=== Analyse de {Path(input_bin).name} ===",
