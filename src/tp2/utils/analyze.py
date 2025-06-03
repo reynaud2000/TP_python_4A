@@ -31,7 +31,7 @@ def analyze_shellcode(input_bin: Union[str, Path]) -> str:
     for insn in cs.disasm(sc_bytes, 0x1000):
         disasm.append(f"0x{insn.address:04x}: {insn.mnemonic:8} {insn.op_str}")
 
-      # 4) émulation
+    # 4) émulation
     emu = Emulator()
     BASE = 0x1000
     ret = emu.prepare(sc_bytes, BASE)
@@ -41,9 +41,13 @@ def analyze_shellcode(input_bin: Union[str, Path]) -> str:
     if isinstance(ret, int) and ret != 0:
         emu_log["errors"].append(f"emu.prepare a retourné {ret}")
     else:
-        # On passe un max d'instructions à exécuter, ici par exemple 5000
+        # on précise le buffer, puis le max d'instructions (ici 5000)
         max_instr = 5000
-        emu.run(max_instr)
+        emu.run(sc_bytes, max_instr)
+
+        # si vous ne voulez pas limiter :
+        # emu.run(sc_bytes)
+
         if getattr(emu, "shellcode", None):
             for call in emu.shellcode.calls:
                 emu_log["api_calls"].append(f"{call.name} @0x{call.address:x}")
