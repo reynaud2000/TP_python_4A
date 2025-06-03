@@ -25,56 +25,87 @@ def analyze_shellcode(input_bin: Union[str, Path]) -> str:
         textwrap.fill(" ".join(f"{b:02x}" for b in sc_bytes), width=80)
     ]
 
-    # 3) désassemblage
+    # 3) désassemblage statique
     disasm = []
     cs = Cs(CS_ARCH_X86, CS_MODE_32)
     for insn in cs.disasm(sc_bytes, 0x1000):
         disasm.append(f"0x{insn.address:04x}: {insn.mnemonic:8} {insn.op_str}")
 
-    # 4) émulation
+    # 4) émulation + hook « à la main » des CALL
     emu = Emulator()
     BASE = 0x1000
     ret = emu.prepare(sc_bytes, BASE)
-    emu_log = {"api_calls": [], "errors": []}
+    api_calls = []
+    errors = []
+    MAX_STEPS = 5000
 
     if isinstance(ret, int) and ret != 0:
-        emu_log["errors"].append(f"emu.prepare a retourné {ret}")
+        errors.append(f"emu.prepare a retourné {ret}")
     else:
-        # injection manuelle des exports WinAPI
-        K32 = 0x7C800000
-        URLM = 0x6F1D0000
+        # 4.a) on injecte une table {adresse: nom_API} que le shellcode va
+        #      appeler (CALL <imm> ou CALL reg). Adresses totalement
+        #      arbitraires, mais en-dehors du buffer 0x1000–0x1000+len().
+        SYM = {
+            0x7C810000: "LoadLibraryA",
+            0x7C820000: "GetProcAddress",
+            0x7C830000: "URLDownloadToFileA",
+            0x7C840000: "WinExec",
+            0x7C850000: "CreateProcessA",
+        }
+        # pour éviter de sauter hors mémoire valide, on peut écrire un
+        # RET (0xC3) sur chaque stub. Ici on ne le fait pas, l'ému
+        # va planter dès qu'il tombera dessus, ce qu'on catchera.
+
+        # 4.b) on boucle en pas-à-pas
+        step = 0
+        cs_run = Cs(CS_ARCH_X86, CS_MODE_32)
+        pc = BASE
         try:
-            sc_obj = emu.shellcode
-            sc_obj.symbols[K32 + 0x001F000] = "LoadLibraryA"
-            sc_obj.symbols[K32 + 0x001E000] = "GetProcAddress"
-            sc_obj.symbols[K32 + 0x005A000] = "WinExec"
-            sc_obj.symbols[K32 + 0x006B000] = "CreateProcessA"
-            sc_obj.symbols[URLM + 0x003A000] = "URLDownloadToFileA"
+            while step < MAX_STEPS:
+                # fetch+disasm
+                buf = emu.memory_read(pc, 16)
+                insns = list(cs_run.disasm(buf, pc, count=1))
+                if not insns:
+                    break
+                ins = insns[0]
+                # si c'est un CALL
+                if ins.mnemonic == "call":
+                    target = None
+                    op = ins.op_str.strip()
+                    # CALL imm
+                    if op.startswith("0x"):
+                        target = int(op, 16)
+                    # CALL reg
+                    elif op in ("eax","ebx","ecx","edx","edi","esi","ebp","esp"):
+                        target = emu.get_register(op.upper())
+                    # appelle notre table
+                    if target and target in SYM:
+                        api_calls.append(f"{SYM[target]} @{hex(ins.address)}")
+
+                # on avance d'une instruction
+                r = emu.step()
+                if r != 0:
+                    # ex: accès mémoire invalide => on sort
+                    break
+                pc = emu.get_register("EIP")
+                step += 1
+
         except Exception as e:
-            emu_log["errors"].append(f"Injection symboles API impossible: {e}")
+            errors.append(f"Emulation interrompue: {e}")
 
-        # exécution : buffer + nombre max d'instructions
-        # ATTENTION, pas de keyword 'max_instr' !
-        emu.run(sc_bytes, 5000)
-
-        # collecte des appels
-        if getattr(emu, "shellcode", None):
-            for call in emu.shellcode.calls:
-                name = call.name or f"sub_0x{call.address:x}"
-                emu_log["api_calls"].append(f"{name} @0x{call.address:x}")
-
-    # 5) rapport
-    report = [f"=== Analyse de {Path(input_bin).name} ===",
-              *hexdump,
-              "\n[CAPSTONE] Instructions désassemblées:"]
-    report += disasm
-    report += ["\n[LIBEMU] Détections dynamiques:"]
-    if emu_log["api_calls"]:
-        for c in emu_log["api_calls"]:
-            report.append(f"• {c}")
+    # 5) on construit le rapport
+    report = []
+    report.append(f"=== Analyse de {Path(input_bin).name} ===")
+    report.extend(hexdump)
+    report.append("\n[CAPSTONE] Instructions désassemblées:")
+    report.extend(disasm)
+    report.append("\n[HOOK-SHELL] API calls détectées (pas-à-pas):")
+    if api_calls:
+        for c in api_calls:
+            report.append("• " + c)
     else:
         report.append("Aucune détection")
-    for e in emu_log["errors"]:
-        report.append(f"⚠ {e}")
+    for e in errors:
+        report.append("⚠ " + e)
 
     return "\n".join(report)
