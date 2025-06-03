@@ -61,6 +61,11 @@ def analyze_shellcode(input_bin: Union[str, Path]) -> str:
         size_map = 0x1000 * ((len(sc) // 0x1000) + 1)
         uc.mem_map(BASE, size_map, UC_PROT_ALL)
         uc.mem_write(BASE, sc)
+        
+        # override du stub de résolveur pour qu’il ne fasse qu’un RET
+        RESOLVER = 0x1002
+        uc.mem_write(RESOLVER, b"\xC3")  # RET instruction
+
         # map stack
         uc.mem_map(STACK_BASE, STACK_SIZE, UC_PROT_ALL)
         uc.reg_write(UC_X86_REG_ESP, STACK_BASE + STACK_SIZE // 2)
