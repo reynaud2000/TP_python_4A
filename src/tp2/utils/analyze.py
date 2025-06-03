@@ -31,31 +31,28 @@ def analyze_shellcode(input_bin: Union[str, Path]) -> str:
     for insn in cs.disasm(sc_bytes, 0x1000):
         disasm.append(f"0x{insn.address:08x}: {insn.mnemonic:8} {insn.op_str}")
 
-    # 4) Emulation
+   # 4) Emulation libemu
     emu_log = {"api_calls": [], "errors": []}
     try:
         emu = Emulator()
         BASE = 0x1000
-        # <- on met les bytes en premier, puis l'adresse !
         ret = emu.prepare(sc_bytes, BASE)
-        if ret != 0:
+
+        # ancien test (ne fonctionne plus car ret == None)
+        # if ret != 0:
+        #     emu_log["errors"].append(f"emu.prepare a retourné {ret}")
+        # else:
+        #     emu.run()
+        #
+        # nouveau test : on ne signale l'erreur que si ret est un entier != 0
+        if isinstance(ret, int) and ret != 0:
             emu_log["errors"].append(f"emu.prepare a retourné {ret}")
         else:
             emu.run()
             if hasattr(emu, 'shellcode') and emu.shellcode:
                 for call in emu.shellcode.calls:
-                    emu_log["api_calls"].append(f"{call.name} (0x{call.address:x})")
+                    emu_log["api_calls"].append(
+                        f"{call.name} (0x{call.address:x})"
+                    )
     except Exception as e:
         emu_log["errors"].append(str(e))
-
-    # 5) Rapport
-    report = [f"=== Analyse de {Path(input_bin).name} ===",
-              *hexdump,
-              "\n[CAPSTONE]:"] + disasm + [
-              "\n[LIBEMU] Détections dynamiques:"]
-    if emu_log["api_calls"]:
-        report += [f"• {c}" for c in emu_log["api_calls"]]
-    else:
-        report.append("Aucune détection")
-    report += [f"⚠ {e}" for e in emu_log["errors"]]
-    return "\n".join(report)
