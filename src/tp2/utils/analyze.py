@@ -40,33 +40,30 @@ def analyze_shellcode(input_bin: Union[str, Path]) -> str:
     if isinstance(ret, int) and ret != 0:
         emu_log["errors"].append(f"emu.prepare a retourné {ret}")
     else:
-        # --- injection manuelle des symboles d'API Windows ---
-        # On choisit des adresses arbitraires dans l'espace simulé
+        # injection manuelle des exports WinAPI
         K32 = 0x7C800000
         URLM = 0x6F1D0000
-
         try:
             sc_obj = emu.shellcode
-            # table symbol address -> name
             sc_obj.symbols[K32 + 0x001F000] = "LoadLibraryA"
             sc_obj.symbols[K32 + 0x001E000] = "GetProcAddress"
             sc_obj.symbols[K32 + 0x005A000] = "WinExec"
             sc_obj.symbols[K32 + 0x006B000] = "CreateProcessA"
             sc_obj.symbols[URLM + 0x003A000] = "URLDownloadToFileA"
         except Exception as e:
-            emu_log["errors"].append(f"Impossible d'injecter les symboles API: {e}")
+            emu_log["errors"].append(f"Injection symboles API impossible: {e}")
 
-        # on exécute
-        emu.run(sc_bytes, max_instr=5000)
+        # exécution : buffer + nombre max d'instructions
+        # ATTENTION, pas de keyword 'max_instr' !
+        emu.run(sc_bytes, 5000)
 
-        # on récupère les appels loggés
+        # collecte des appels
         if getattr(emu, "shellcode", None):
             for call in emu.shellcode.calls:
-                # call.name est rempli si l'adresse correspond à un symbole
                 name = call.name or f"sub_0x{call.address:x}"
                 emu_log["api_calls"].append(f"{name} @0x{call.address:x}")
 
-    # 5) construction du rapport
+    # 5) rapport
     report = [f"=== Analyse de {Path(input_bin).name} ===",
               *hexdump,
               "\n[CAPSTONE] Instructions désassemblées:"]
